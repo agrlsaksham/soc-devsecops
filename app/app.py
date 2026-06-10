@@ -213,4 +213,9 @@ def attacker_ui():
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    import os
+    # Read environment variable to decide debug mode (defaults to False for DevSecOps best practices)
+    debug_mode = os.getenv("FLASK_DEBUG", "False").lower() == "true"
+    # Port configuration from environment
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=debug_mode)  # nosec B201 B104

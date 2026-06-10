@@ -2,7 +2,7 @@ import requests
 import time
 import random
 
-URL = "http://127.0.0.1:5000/"   # 🔥 use 127.0.0.1 (more stable than localhost)
+URL = "http://127.0.0.1:5000/login"   # 🔥 use 127.0.0.1 (more stable than localhost)
 
 fake_ips = ["192.168.1.1", "10.0.0.2", "172.16.0.3"]
 

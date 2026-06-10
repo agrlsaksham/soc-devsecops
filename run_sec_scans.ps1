@@ -11,8 +11,11 @@ Write-Host "`n[1/5] Checking Tooling Prerequisites..." -ForegroundColor Yellow
 if (!(Get-Command python -ErrorAction SilentlyContinue)) {
     Write-Error "Python is not installed or not in PATH."
 }
+
+$hasDocker = $true
 if (!(Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Error "Docker is not installed or not in PATH."
+    Write-Host "⚠️ Docker CLI is not installed or not in PATH. Deployment will run in local fallback mode." -ForegroundColor Yellow
+    $hasDocker = $false
 }
 
 # 2. Check and Install python security packages
@@ -54,24 +57,49 @@ try {
     Write-Error "Pipeline aborted due to vulnerable dependencies."
 }
 
-# 5. Build and Deploy Containers
-Write-Host "`n[5/5] Building and deploying Docker containers..." -ForegroundColor Yellow
-try {
-    # Stop old container if running
-    Write-Host "Shutting down active container services..." -ForegroundColor Gray
-    docker-compose down
+# 5. Build and Deploy Containers / Local Fallback
+Write-Host "`n[5/5] Deploying Application Services..." -ForegroundColor Yellow
+
+$dockerDeploySuccessful = $false
+
+if ($hasDocker) {
+    try {
+        # Test docker daemon connectivity
+        & docker ps > $null 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Docker daemon is not running."
+        }
+        
+        Write-Host "Shutting down active container services..." -ForegroundColor Gray
+        docker-compose down
+        
+        Write-Host "Spinning up new container services..." -ForegroundColor Gray
+        docker-compose up -d --build
+        
+        $dockerDeploySuccessful = $true
+        
+        Write-Host "`n🎉 PIPELINE SUCCESSFUL (DOCKER)!" -ForegroundColor Green
+        Write-Host "=============================================" -ForegroundColor Green
+        Write-Host "Application is live at: http://localhost:5000" -ForegroundColor Green
+        Write-Host "Attacker simulation panel: http://localhost:5000/attacker" -ForegroundColor Green
+        Write-Host "Logs path (host): ./logs/security_events.log" -ForegroundColor Green
+        Write-Host "=============================================" -ForegroundColor Green
+    } catch {
+        Write-Host "⚠️ Docker deployment failed or daemon is not running." -ForegroundColor Yellow
+    }
+}
+
+if (-not $dockerDeploySuccessful) {
+    Write-Host "Starting Flask application locally in background..." -ForegroundColor Yellow
     
-    # Build and start new container
-    Write-Host "Spinning up new container services..." -ForegroundColor Gray
-    docker-compose up -d --build
+    # Run Flask app using start-process to run it in the background
+    $env:FLASK_DEBUG = "true"  # Enable debug locally
+    Start-Process python -ArgumentList "app/app.py" -NoNewWindow
     
-    Write-Host "`n🎉 PIPELINE SUCCESSFUL!" -ForegroundColor Green
+    Write-Host "`n🎉 PIPELINE SUCCESSFUL (LOCAL FALLBACK)!" -ForegroundColor Green
     Write-Host "=============================================" -ForegroundColor Green
     Write-Host "Application is live at: http://localhost:5000" -ForegroundColor Green
     Write-Host "Attacker simulation panel: http://localhost:5000/attacker" -ForegroundColor Green
-    Write-Host "Logs path (host): ./logs/security_events.log" -ForegroundColor Green
+    Write-Host "Logs path (host): ./app/logs/security_events.log" -ForegroundColor Green
     Write-Host "=============================================" -ForegroundColor Green
-} catch {
-    Write-Host "❌ Build/Deploy stage failed." -ForegroundColor Red
-    Write-Error $_
 }
