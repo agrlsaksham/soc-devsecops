@@ -377,6 +377,9 @@ tr:hover td {
         <button class="btn" onclick="exportLogs()">
             📥 Export CSV Logs
         </button>
+        <button class="btn btn-danger" onclick="resetDashboard()">
+            🗑️ Clear History
+        </button>
     </div>
 </div>
 
@@ -565,6 +568,33 @@ function filterLogs(){
     document.querySelectorAll("#logs tr").forEach(row=>{
         row.style.display = row.innerText.toLowerCase().includes(q) ? "" : "none";
     });
+}
+
+async function resetDashboard(){
+    if (!confirm("Are you sure you want to clear all security logs and reset the dashboard history?")) return;
+    try {
+        const res = await fetch("/reset", {
+            method: "POST"
+        });
+        const data = await res.json();
+        console.log(data.message);
+        
+        // Reset local charts data
+        if(lineChart) lineChart.destroy();
+        if(pieChart) pieChart.destroy();
+        if(barChart) barChart.destroy();
+        if(threatChart) threatChart.destroy();
+        lineChart = pieChart = barChart = threatChart = null;
+
+        // Clear leaflet map markers
+        markers.forEach(m => map.removeLayer(m));
+        markers = [];
+
+        // Fetch empty dataset to refresh UI counts and tables
+        await load();
+    } catch(err) {
+        console.error("Error resetting dashboard:", err);
+    }
 }
 
 // Chart Global Configs

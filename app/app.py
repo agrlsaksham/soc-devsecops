@@ -206,6 +206,26 @@ def get_logs():
     })
 
 
+# ---------------- RESET API ----------------
+@app.route("/reset", methods=["POST"])
+def reset_logs():
+    global attempts, blocked_ips, blocked_users, logs, timeline
+    attempts.clear()
+    blocked_ips.clear()
+    blocked_users.clear()
+    logs.clear()
+    timeline.clear()
+    
+    # Clear persistent logs file
+    try:
+        with open(LOG_FILE, "w") as f:
+            f.write("")
+    except Exception as e:
+        app.logger.error(f"Error resetting log file: {e}")
+        
+    return jsonify({"message": "Dashboard logs and history reset successfully"})
+
+
 # ---------------- ATTACKER UI ----------------
 @app.route("/attacker")
 def attacker_ui():
