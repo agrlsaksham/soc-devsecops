@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Attacker Panel</title>
+
+<style>
+body { font-family: Arial; background:#111827; color:white; padding:20px; }
+.card { background:#1f2937; padding:20px; border-radius:10px; }
+button { padding:10px; background:red; color:white; border:none; }
+</style>
+</head>
+
+<body>
+
+<h1>Attack Panel</h1>
+
+<div class="card">
+
+<select id="type">
+<option>Brute Force</option>
+<option>Password Spray</option>
+<option>DDoS</option>
+</select>
+
+<input id="intensity" placeholder="Number of attacks">
+
+<button onclick="attack()">Launch Attack</button>
+
+<p id="status"></p>
+
+</div>
+
+<script>
+async function attack(){
+    const type = document.getElementById("type").value;
+    const intensity = document.getElementById("intensity").value;
+
+    await fetch("/attack",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({type,intensity})
+    });
+
+    document.getElementById("status").innerText = "Attack launched!";
+}
+</script>
+
+</body>
+</html>

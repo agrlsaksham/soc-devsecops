@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>SOC Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<style>
+body {
+    margin:0;
+    font-family: "Segoe UI";
+    background:#0b1220;
+    color:#e2e8f0;
+}
+canvas {
+    height:300px !important;
+}
+
+.header {
+    background:#111827;
+    padding:15px;
+    font-size:20px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+
+.alert {
+    background:#ef4444;
+    padding:6px 12px;
+    border-radius:5px;
+    display:none;
+    font-size:14px;
+}
+
+.container { padding:15px; }
+
+.grid { display:grid; gap:15px; }
+.kpi-grid { grid-template-columns: repeat(4,1fr); }
+.panel-grid { grid-template-columns: 2fr 1fr; }
+
+.card {
+    background:#1e293b;
+    padding:15px;
+    border-radius:10px;
+}
+
+h3 { margin-top:0; }
+
+.low { color:#22c55e; }
+.medium { color:#f59e0b; }
+.high { color:#ef4444; }
+.critical { color:#dc2626; font-weight:bold; }
+
+table {
+    width:100%;
+    border-collapse:collapse;
+}
+
+td, th {
+    padding:8px;
+    border-bottom:1px solid #334155;
+}
+
+input {
+    padding:6px;
+    margin-bottom:10px;
+    width:200px;
+    border-radius:5px;
+    border:none;
+}
+
+button {
+    padding:6px 10px;
+    margin-left:10px;
+    border:none;
+    border-radius:5px;
+    background:#2563eb;
+    color:white;
+    cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+    <span>🛡 SOC Dashboard</span>
+    <div>
+        <span id="alert" class="alert">⚠ HIGH THREAT</span>
+        <button onclick="toggleAuto()">Auto Refresh</button>
+        <button onclick="exportLogs()">Export Logs</button>
+    </div>
+</div>
+
+<div class="container">
+
+<!-- KPI -->
+<div class="grid kpi-grid">
+    <div class="card">Attacks<br><b id="fail">0</b></div>
+    <div class="card">Success<br><b id="success">0</b></div>
+    <div class="card">Blocked IPs<br><b id="blocked">0</b></div>
+    <div class="card">Top IP<br><b id="topip">-</b></div>
+</div>
+<div class="card">
+<h3>⚔ Attacker Interface</h3>
+
+<p>
+This system includes a separate attacker simulation interface.
+Click below to simulate real-world attacks.
+</p>
+
+<button onclick="openAttackerUI()">Open Attacker Panel</button>
+
+</div>
+<!-- MAIN PANELS -->
+<div class="grid panel-grid">
+
+    <!-- LEFT -->
+    <div class="grid">
+
+        <div class="card">
+            <h3>Attack Timeline</h3>
+            <canvas id="line"></canvas>
+        </div>
+
+        <div class="card">
+            <h3>Top Attackers</h3>
+            <canvas id="bar"></canvas>
+        </div>
+
+    </div>
+
+    <!-- RIGHT -->
+    <div class="grid">
+
+        <div class="card">
+            <h3>Success vs Fail</h3>
+            <canvas id="pie"></canvas>
+        </div>
+
+        <div class="card">
+            <h3>Threat Distribution</h3>
+            <canvas id="threat"></canvas>
+        </div>
+
+    </div>
+
+</div>
+<div class="card">
+<h3>🌍 Global Attack Map</h3>
+<div id="map" style="height:400px;"></div>
+</div>
+<!-- LOG TABLE -->
+<div class="card">
+<h3>Live Events</h3>
+
+<input id="search" placeholder="Search IP/User..." onkeyup="filterLogs()">
+
+<table>
+<tr>
+<th>Time</th><th>IP</th><th>User</th><th>Country</th><th>Threat</th><th>Action</th><th>Country</th> 
+</tr>
+<tbody id="logs"></tbody>
+</table>
+
+</div>
+
+</div>
+
+<script>
+let lineChart, pieChart, barChart, threatChart;
+let auto = true;
+let globalLogs = [];
+let map = L.map('map').setView([20,0], 2);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap'
+}).addTo(map);
+
+let markers = [];
+
+function updateMap(logs){
+
+    // clear old markers
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+
+    logs.forEach(log => {
+        if(log.lat && log.lon){
+            let marker = L.circleMarker([log.lat, log.lon], {
+                radius: 6,
+                color: "red"
+            }).addTo(map)
+            .bindPopup(`${log.country} - ${log.ip}`);
+
+            markers.push(marker);
+        }
+    });
+}
+// FIX: Proper canvas reference
+const lineCanvas = document.getElementById("line");
+const pieCanvas = document.getElementById("pie");
+const barCanvas = document.getElementById("bar");
+const threatCanvas = document.getElementById("threat");
+
+// TOGGLE AUTO REFRESH
+function toggleAuto(){
+    auto = !auto;
+}
+function openAttackerUI(){
+    window.open("/attacker", "_blank");
+}
+
+async function launchAttack(){
+    const type = document.getElementById("attackType").value;
+    const intensity = document.getElementById("intensity").value;
+
+    try{
+        const res = await fetch("/attack",{
+            method:"POST",
+            headers:{
+                "Content-Type":"application/json"
+            },
+            body:JSON.stringify({
+                type:type,
+                intensity:intensity
+            })
+        });
+
+        const data = await res.json();
+        document.getElementById("attackStatus").innerText = data.message;
+
+    }catch(err){
+        document.getElementById("attackStatus").innerText = "Attack failed";
+    }
+}
+// EXPORT LOGS
+function exportLogs(){
+    let csv = "time,ip,user,threat,action\n";
+    globalLogs.forEach(l=>{
+        csv += `${l.time},${l.ip},${l.user},${l.threat},${l.action}\n`;
+    });
+
+    let blob = new Blob([csv], { type: 'text/csv' });
+    let a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "logs.csv";
+    a.click();
+}
+
+// FILTER LOGS
+function filterLogs(){
+    const q = document.getElementById("search").value.toLowerCase();
+
+    document.querySelectorAll("#logs tr").forEach(row=>{
+        row.style.display = row.innerText.toLowerCase().includes(q) ? "" : "none";
+    });
+}
+
+async function load(){
+    if(!auto) return;
+
+    try{
+        const res = await fetch("/logs");
+        const data = await res.json();
+
+        console.log(data); // DEBUG
+
+        if(!data) return;
+
+        globalLogs = data.logs || [];
+
+        // KPI
+        document.getElementById("fail").innerText = data.fail || 0;
+        document.getElementById("success").innerText = data.success || 0;
+        document.getElementById("blocked").innerText = (data.blocked_ips || []).length;
+
+        // TOP IP
+        let ipCount = {};
+        globalLogs.forEach(l=>{
+            ipCount[l.ip] = (ipCount[l.ip]||0)+1;
+        });
+
+        let sorted = Object.entries(ipCount).sort((a,b)=>b[1]-a[1]);
+        document.getElementById("topip").innerText = sorted[0]?.[0] || "-";
+
+        // ALERT
+        document.getElementById("alert").style.display =
+            (data.fail || 0) > 10 ? "block" : "none";
+
+        // SAFE CHECK
+        if(!data.timeline || data.timeline.length === 0){
+            console.log("No timeline yet");
+            return;
+        }
+
+        const times = data.timeline.map(t=>t.time);
+        const counts = data.timeline.map(t=>t.count);
+
+        // ===== LINE =====
+        if(lineChart) lineChart.destroy();
+        lineChart = new Chart(lineCanvas,{
+            type:"line",
+            data:{
+                labels:times,
+                datasets:[{
+                    label:"Attacks",
+                    data:counts,
+                    borderColor:"#22c55e",
+                    tension:0.3
+                }]
+            }
+        });
+
+        // ===== PIE =====
+        if(pieChart) pieChart.destroy();
+        pieChart = new Chart(pieCanvas,{
+            type:"pie",
+            data:{
+                labels:["Success","Fail"],
+                datasets:[{
+                    data:[data.success || 0, data.fail || 0],
+                    backgroundColor:["#22c55e","#ef4444"]
+                }]
+            }
+        });
+
+        // ===== BAR =====
+        if(barChart) barChart.destroy();
+        barChart = new Chart(barCanvas,{
+            type:"bar",
+            data:{
+                labels:sorted.map(i=>i[0]),
+                datasets:[{
+                    label:"Attempts",
+                    data:sorted.map(i=>i[1]),
+                    backgroundColor:"#3b82f6"
+                }]
+            }
+        });
+
+        // ===== THREAT =====
+        let threatMap = {};
+        globalLogs.forEach(l=>{
+            threatMap[l.threat] = (threatMap[l.threat]||0)+1;
+        });
+
+        if(threatChart) threatChart.destroy();
+        threatChart = new Chart(threatCanvas,{
+            type:"doughnut",
+            data:{
+                labels:Object.keys(threatMap),
+                datasets:[{
+                    data:Object.values(threatMap),
+                    backgroundColor:["#22c55e","#f59e0b","#ef4444","#dc2626"]
+                }]
+            }
+        });
+        updateMap(data.logs);
+        // ===== LOG TABLE =====
+        document.getElementById("logs").innerHTML =
+            globalLogs.length ? globalLogs.slice().reverse().map(l=>`
+            <tr>
+            <td>${l.time}</td>
+            <td>${l.ip}</td>
+            <td>${l.user}</td>
+            <td style="color:cyan">${l.country || "Unknown"}</td>  <!-- ✅ SAFE -->
+            <td class="${(l.threat || '').toLowerCase()}">${l.threat}</td>
+            <td>${l.action}</td>
+            </tr>
+            `).join("") : "<tr><td colspan='6'>No logs</td></tr>";
+
+    }catch(err){
+        console.error("Error loading data:", err);
+    }
+}
+
+
+load();
+</script>
+</body>
+</html>
