@@ -1,8 +1,19 @@
-version: '3'
+version: '3.8'
 
 services:
   soc-app:
     build: .
+    container_name: soc-container
     ports:
       - "5000:5000"
+    volumes:
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
     restart: always

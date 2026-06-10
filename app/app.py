@@ -1,8 +1,16 @@
 from flask import Flask, request, render_template, jsonify
 from datetime import datetime, timedelta
 import random
+import os
+import json
 
 app = Flask(__name__)
+
+# ---------------- PERSISTENT LOG PATHS ----------------
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, "security_events.log")
 
 # ---------------- DATA ----------------
 attempts = {}
@@ -12,6 +20,45 @@ logs = []
 timeline = []
 
 VALID_USERS = {"admin": "1234", "user": "1234"}
+
+# ---------------- LOG UTILITIES ----------------
+def write_log_to_file(log_entry):
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+    except Exception as e:
+        app.logger.error(f"Error writing persistent log: {e}")
+
+def add_log(log_entry):
+    logs.append(log_entry)
+    write_log_to_file(log_entry)
+
+def load_logs_from_file():
+    global logs, timeline
+    if not os.path.exists(LOG_FILE):
+        return
+    try:
+        with open(LOG_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        log_data = json.loads(line)
+                        logs.append(log_data)
+                        
+                        # Populate timeline from fail events
+                        if log_data.get("status") == "FAILED":
+                            timeline.append({
+                                "time": log_data.get("time"),
+                                "count": 1
+                            })
+                    except Exception:
+                        pass
+    except Exception as e:
+        pass
+
+# Load logs on startup
+load_logs_from_file()
 
 # ---------------- CLEAN BLOCK EXPIRE ----------------
 def cleanup_blocks():
@@ -63,7 +110,7 @@ def simulate_attack(ip, username):
     # log entry
     loc = get_location(ip)
 
-    logs.append({
+    add_log({
         "ip": ip,
         "user": username,
         "time": now.strftime("%H:%M:%S"),
@@ -127,7 +174,7 @@ def login():
 
     # success login
     if username in VALID_USERS and VALID_USERS[username] == password:
-        logs.append({
+        add_log({
             "ip": ip,
             "user": username,
             "time": now.strftime("%H:%M:%S"),

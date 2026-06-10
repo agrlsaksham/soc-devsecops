@@ -1,18 +1,43 @@
 pipeline {
     agent any
 
-    stages {
+    environment {
+        DOCKER_IMAGE = "soc-app"
+        CONTAINER_NAME = "soc-container"
+    }
 
-        stage('Clone Repo') {
+    stages {
+        stage('Clone Repository') {
             steps {
-                git 'https://github.com/your-username/soc-devsecops.git'
+                checkout scm
+            }
+        }
+
+        stage('Dependency Audit (SCA)') {
+            steps {
+                script {
+                    echo 'Running pip-audit for third-party vulnerabilities...'
+                    sh 'pip install pip-audit'
+                    sh 'pip-audit -r app/requirements.txt'
+                }
+            }
+        }
+
+        stage('Static Analysis (SAST)') {
+            steps {
+                script {
+                    echo 'Running Bandit security analysis...'
+                    sh 'pip install bandit'
+                    sh 'bandit -r app/ -ll'
+                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 script {
-                    docker.build("soc-app")
+                    echo 'Building secure non-root Docker image...'
+                    sh "docker build -t ${DOCKER_IMAGE} ."
                 }
             }
         }
@@ -20,15 +45,17 @@ pipeline {
         stage('Stop Old Container') {
             steps {
                 script {
-                    sh 'docker rm -f soc-container || true'
+                    echo 'Removing old running application instances...'
+                    sh "docker rm -f ${CONTAINER_NAME} || true"
                 }
             }
         }
 
-        stage('Run New Container') {
+        stage('Deploy New Container') {
             steps {
                 script {
-                    sh 'docker run -d -p 5000:5000 --name soc-container soc-app'
+                    echo 'Running container with logs volume mount...'
+                    sh "docker run -d -p 5000:5000 -v \$(pwd)/logs:/app/logs --name ${CONTAINER_NAME} ${DOCKER_IMAGE}"
                 }
             }
         }
